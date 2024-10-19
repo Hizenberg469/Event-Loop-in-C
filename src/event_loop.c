@@ -11,16 +11,21 @@ static bool el_debug = true;
 static task_t*
 event_loop_get_next_task_to_run(event_loop_t* el) {
 
-    task_t* task;
-    if (!el->task_array_head) return NULL;
-    task = el->task_array_head;
-    el->task_array_head = task->right;
-    if (el->task_array_head) {
-        el->task_array_head->left = NULL;
+    task_t* task = NULL;
+
+    for (int i = 0; i < MAX_PRIORITY_LEVEL; i++) {
+        if (!el->task_array_head[i]) continue;
+        task = el->task_array_head[i];
+        el->task_array_head[i] = task->right;
+        if (el->task_array_head[i]) {
+            el->task_array_head[i]->left = NULL;
+        }
+        task->left = NULL;
+        task->right = NULL;
+        return task;
     }
-    task->left = NULL;
-    task->right = NULL;
-    return task;
+
+    return NULL;
 }
 
 static void
@@ -32,7 +37,7 @@ event_loop_add_task_in_task_array(
 
     prev_task = NULL;
 
-    task = el->task_array_head;
+    task = el->task_array_head[new_task->priority];
     while (task) {
         prev_task = task;
         task = task->right;
@@ -42,7 +47,7 @@ event_loop_add_task_in_task_array(
         new_task->left = prev_task;
     }
     else {
-        el->task_array_head = new_task;
+        el->task_array_head[new_task->priority] = new_task;
     }
 }
 
@@ -57,8 +62,8 @@ task_is_present_in_task_array(task_t* task) {
 static void
 event_loop_remove_task_from_task_array(event_loop_t* el, task_t* task) {
 
-    if (el->task_array_head == task) {
-        el->task_array_head = task->right;
+    if (el->task_array_head[task->priority] == task) {
+        el->task_array_head[task->priority] = task->right;
     }
 
     if (!task->left) {
@@ -84,7 +89,9 @@ event_loop_remove_task_from_task_array(event_loop_t* el, task_t* task) {
 void
 event_loop_init(event_loop_t* el) {
 
-    el->task_array_head = NULL;
+    for (int i = 0; i < MAX_PRIORITY_LEVEL; i++) {
+        el->task_array_head[i] = NULL;
+    }
     pthread_mutex_init(&el->ev_loop_mutex, NULL);
     el->ev_loop_state = EV_LOOP_IDLE;
     pthread_cond_init(&el->ev_loop_cv, NULL);
@@ -111,6 +118,7 @@ event_loop_schedule_task(event_loop_t* el, task_t* task) {
 static void* event_loop_thread(void* arg) {
 
     task_t* task;
+    EL_RES_T res;
     event_loop_t* el = (event_loop_t*)arg;
     while (1) {
         /* Lock the event Loop Mutex */
@@ -140,21 +148,30 @@ static void* event_loop_thread(void* arg) {
 
         /* Fire the task now */
         el->current_task = task;
-        task->cbk(task->arg);
+        res = task->cbk(task->arg);
         el->current_task = NULL;
+
+        if (res == EL_CONTINUE) {
+            /* Re-schedule same task */
+            event_loop_schedule_task(el, task);
+        }
+        else {
+            free(task);
+        }
     }
 
     return NULL;
 }
 
 task_t*
-task_create_new_job(event_loop_t* el, event_cbk cbk, void* arg) {
+task_create_new_job(event_loop_t* el, event_cbk cbk, void* arg, TASK_PRIORITY_T priority) {
 
     task_t* task = (task_t*)calloc(1, sizeof(task_t));
     task->arg = arg;
     task->cbk = cbk;
     task->left = NULL;
     task->right = NULL;
+    task->priority = priority;
     event_loop_schedule_task(el, task);
     return task;
 }
@@ -176,4 +193,23 @@ event_loop_run(event_loop_t* el) {
 
 }
 
+
+void
+task_cancel_job(event_loop_t* el, task_t* task) {
+
+    /* Dont kill yourself while you are still executing */
+
+    if (el->current_task == task) {
+        return;
+    }
+
+    pthread_mutex_lock(&el->ev_loop_mutex);
+
+    if ( task_is_present_in_task_array(task) )
+        event_loop_remove_task_from_task_array(el, task);
+
+    pthread_mutex_unlock(&el->ev_loop_mutex);
+
+    free(task);
+}
 

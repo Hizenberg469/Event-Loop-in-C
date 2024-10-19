@@ -3,17 +3,33 @@
 
 #include <pthread.h>
 
+#define MAX_PRIORITY_LEVEL 4
 
 typedef struct task_ task_t;
 typedef struct event_loop_ event_loop_t;
 
-typedef void (*event_cbk)(void*);
+
+typedef enum EL_RES_ {
+    EL_CONTINUE,
+    EL_FINISH
+} EL_RES_T;
+
+typedef enum TASK_PRIORITY {
+    TASK_PRIORITY_HIGH,
+    TASK_PRIORITY_MEDIUM,
+    TASK_PRIORITY_LOW,
+    TASK_PRIORITY_MAX
+}TASK_PRIORITY_T;
+
+typedef  EL_RES_T (*event_cbk)(void*);
+
 
 struct task_ {
 
     event_cbk cbk;
     void* arg;
     struct task_* left, * right;
+    TASK_PRIORITY_T priority;
 };
 
 typedef enum {
@@ -25,7 +41,7 @@ typedef enum {
 struct event_loop_ {
 
     /* head to the start of the task array */
-    struct task_* task_array_head;
+    struct task_* task_array_head[MAX_PRIORITY_LEVEL];
     /* Mutex to enforce Mutual exclusion enqueue/Deque
      * Operation in task array. Also used to update event loop
      * attributes in mutual exclusive way
@@ -49,6 +65,11 @@ void
 event_loop_run(event_loop_t* el);
 
 task_t*
-task_create_new_job(event_loop_t* el, event_cbk cbk, void* arg);
+task_create_new_job(event_loop_t* el, event_cbk cbk, void* arg, TASK_PRIORITY_T priority);
+
+void
+task_cancel_job(event_loop_t* el, task_t* task);
+
+
 
 #endif

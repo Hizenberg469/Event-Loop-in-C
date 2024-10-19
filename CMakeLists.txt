@@ -35,3 +35,4 @@ set(SOURCE_DIR ${CMAKE_SOURCE_DIR}/src)
 #Adding Sub-directory having CMakeLists.txt...
 add_subdirectory(src)
 add_subdirectory(test)
+add_subdirectory(asyncproject)

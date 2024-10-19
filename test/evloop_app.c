@@ -33,18 +33,21 @@ typedef struct arg_obj_ {
 } arg_obj_t;
 
 
-void
+EL_RES_T
 sum_wrapper(void* arg) {
 
     arg_obj_t* arg_obj = (arg_obj_t*)arg;
     printf("sum = %d\n", sum(arg_obj->arr, arg_obj->n));
+    return EL_FINISH;
 }
 
-void
+EL_RES_T
 mul_wrapper(void* arg) {
 
     arg_obj_t* arg_obj = (arg_obj_t*)arg;
     printf("mul = %d\n", mul(arg_obj->arr, arg_obj->n));
+
+    return EL_FINISH;
 }
 
 
@@ -58,13 +61,13 @@ main(int argc, char** argv) {
     arg_obj_t* arg_obj1 = (arg_obj_t*)calloc(1, sizeof(arg_obj_t));
     arg_obj1->arr = arr;
     arg_obj1->n = sizeof(arr) / sizeof(arr[0]);
-    task_t* task_sum = task_create_new_job(&el, sum_wrapper, (void*)arg_obj1);
+    task_t* task_sum = task_create_new_job(&el, sum_wrapper, (void*)arg_obj1, TASK_PRIORITY_LOW);
 
 
     arg_obj_t* arg_obj2 = (arg_obj_t*)calloc(1, sizeof(arg_obj_t));
     arg_obj2->arr = arr;
     arg_obj2->n = sizeof(arr) / sizeof(arr[0]);
-    task_t* task_mul = task_create_new_job(&el, mul_wrapper, (void*)arg_obj2);
+    task_t* task_mul = task_create_new_job(&el, mul_wrapper, (void*)arg_obj2, TASK_PRIORITY_LOW);
 
 
     printf("End of main\n");
