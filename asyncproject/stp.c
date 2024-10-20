@@ -6,8 +6,9 @@
 #include "rt.h"
 #include "stp_el.h"
 
-
+/* Import external global variable */
 extern event_loop_t el;
+
 rt_table_t* rt_table = NULL;
 
 int
@@ -37,7 +38,7 @@ pkt_process_fn(char* msg_recvd, uint32_t msg_size, char* sender_ip, uint32_t por
     uint32_t* cmd_code = (uint32_t*)msg_recvd;
     rt_table_entry_t* rt_entry = (rt_table_entry_t*)(cmd_code + 1);
     rt_entry->exp_timer_msec = RT_ENTRY_EXP_TIMER * 1000;
-
+    //stp_update_routing_table(rt_table, *cmd_code, rt_entry);
     el_stp_update_routing_table(rt_table, *cmd_code, rt_entry);
 }
 
@@ -48,8 +49,7 @@ cli_handler(int choice)
     {
     case 1:
         //rt_display_rt_table(rt_table);
-
-        rt_display_rt_table_preemption_context_save(rt_table);
+        rt_display_rt_table_preemption_conext_save(rt_table);
         printf("\n\n");
         break;
     case 2:
@@ -61,6 +61,8 @@ cli_handler(int choice)
         scanf("%s", rt_entry.gw);
         printf("Enter OIF name : ");
         scanf("%s", rt_entry.oif);
+        rt_entry.exp_timer_msec = 0; /* rt entries created by CLI must never expire*/
+        //stp_update_routing_table(rt_table, ROUTE_CREATE, &rt_entry);
         el_stp_update_routing_table(rt_table, ROUTE_CREATE, &rt_entry);
     }
     break;
@@ -72,10 +74,13 @@ cli_handler(int choice)
         rt_table_entry_t rt_entry;
         printf("Enter Dest Address : ");
         scanf("%s", rt_entry.dest);
-        if (el_stp_update_routing_table(rt_table, ROUTE_DELETE, &rt_entry))
+#if 0
+        if (stp_update_routing_table(rt_table, ROUTE_DELETE, &rt_entry))
         {
             printf("No Such entry\n");
         }
+#endif
+        el_stp_update_routing_table(rt_table, ROUTE_DELETE, &rt_entry);
     }
     break;
     case 5:
@@ -89,17 +94,15 @@ cli_handler(int choice)
     break;
     case 6:
     {
-        rt_table_entry_t rt_entry_template;
-        printf("Entry Dest Address : ");
-        scanf("%s", rt_entry_template.dest);
-        el_stp_serialize_and_send_rt_entry(rt_table, &rt_entry_template);
+        rt_table_entry_t rt_entry_tmplate;
+        printf("Enter Dest Address : ");
+        scanf("%s", rt_entry_tmplate.dest);
+        el_stp_serialize_and_send_rt_entry(rt_table, &rt_entry_tmplate);
     }
     break;
     case 7:
-    {
         el_stp_delete_rt_table(rt_table);
-    }
-    break;
+        break;
     case 8:
         exit(0);
     default:
@@ -115,6 +118,8 @@ main(int argc, char** argv) {
             rt_create_new_rt_table("Table1");
         printf(" New Routing Table Created\n");
     }
+
+    stp_init_el(&el);
 
     for (;;) {
 

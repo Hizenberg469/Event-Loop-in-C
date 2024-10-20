@@ -35,7 +35,7 @@ _udp_server_create_and_start(void* arg) {
 
     struct sockaddr_in server_addr;
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = port_no;
+    server_addr.sin_port = htons(port_no);
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(udp_sock_fd, (struct sockaddr*)&server_addr,
@@ -110,25 +110,37 @@ send_udp_msg(char* dest_ip_addr,
     int sock_fd) {
 
     struct sockaddr_in dest;
+    struct hostent* host;
+
+    // Clear the dest structure
+    memset(&dest, 0, sizeof(dest));
 
     dest.sin_family = AF_INET;
-    dest.sin_port = dest_port_no;
-    struct hostent* host = (struct hostent*)gethostbyname(dest_ip_addr);
-    dest.sin_addr = *((struct in_addr*)host->h_addr_list);
-    int addr_len = sizeof(struct sockaddr);
+    dest.sin_port = htons(dest_port_no);  // Convert port to network byte order
+
+    // Get the host by name
+    host = gethostbyname(dest_ip_addr);
+    if (host == NULL) {
+        printf("Error resolving hostname: %s\n", dest_ip_addr);
+        return -1;
+    }
+    dest.sin_addr = *((struct in_addr*)host->h_addr_list[0]);  // Assign IP address
 
     if (sock_fd < 0) {
-
-        sock_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
+        sock_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);  // Create UDP socket
         if (sock_fd < 0) {
-            printf("socket creation failed, errno = %d\n", errno);
+            printf("Socket creation failed, errno = %d\n", errno);
             return -1;
         }
     }
-    sendto(sock_fd, msg, msg_size,
-        0, (struct sockaddr*)&dest,
-        sizeof(struct sockaddr));
+
+    // Send the message
+    int bytes_sent = sendto(sock_fd, msg, msg_size, 0, (struct sockaddr*)&dest, sizeof(dest));
+    if (bytes_sent < 0) {
+        printf("Sendto failed, errno = %d\n", errno);
+        return -1;
+    }
+
     return sock_fd;
 }
 

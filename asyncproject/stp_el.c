@@ -6,10 +6,10 @@
 #include <stdio.h>
 #include "utils.h"
 #include "network_utils.h"
-#include "stp_el.h"
 #include "timerlib.h"
+#include "stp_el.h"
 
-/* Take Event loop global variable */
+/* Take Event Loop global variable */
 event_loop_t el;
 
 /* Import external function */
@@ -18,233 +18,238 @@ stp_update_routing_table(rt_table_t* rt_table, uint32_t cmd_code, rt_table_entry
 
 void
 stp_init_el(event_loop_t* el) {
-	event_loop_init(el);
-	event_loop_run(el);
+
+    event_loop_init(el);
+    event_loop_run(el);
 }
 
 static EL_RES_T
 el_stp_update_routing_table_cbk(void* arg) {
 
-	el_rt_table_update_data_t* el_rt_table_update_data =
-		(el_rt_table_update_data_t*)arg;
+    el_rt_table_update_data_t* el_rt_table_update_data =
+        (el_rt_table_update_data_t*)arg;
 
-	stp_update_routing_table(el_rt_table_update_data->rt_table,
-		el_rt_table_update_data->cmd_code,
-		el_rt_table_update_data->rt_entry);
+    stp_update_routing_table(el_rt_table_update_data->rt_table,
+        el_rt_table_update_data->cmd_code,
+        el_rt_table_update_data->rt_entry);
 
-	free(el_rt_table_update_data->rt_entry);
-	free(el_rt_table_update_data);
-	return EL_FINISH;
+    free(el_rt_table_update_data->rt_entry);
+    free(el_rt_table_update_data);
+    return EL_FINISH;
 }
 
 task_t*
-el_stp_update_routing_table(rt_table_t* rt, int cmd_code, rt_table_entry_t* rt_entry) {
-	el_rt_table_update_data_t* el_rt_table_update_data =
-		(el_rt_table_update_data_t*)calloc(1, sizeof(el_rt_table_update_data_t));
+el_stp_update_routing_table(rt_table_t* rt_table, int cmd_code, rt_table_entry_t* rt_entry) {
 
-	el_rt_table_update_data->rt_table = rt;
-	el_rt_table_update_data->cmd_code = cmd_code;
-	
-	el_rt_table_update_data->rt_entry = (rt_table_entry_t*)calloc(1, sizeof(rt_table_entry_t));
+    el_rt_table_update_data_t* el_rt_table_update_data =
+        (el_rt_table_update_data_t*)calloc(1, sizeof(el_rt_table_update_data_t));
 
-	memcpy((char*)el_rt_table_update_data->rt_entry,
-		rt_entry, sizeof(*rt_entry));
+    el_rt_table_update_data->rt_table = rt_table;
+    el_rt_table_update_data->cmd_code = cmd_code;
 
-	task_t* task = task_create_new_job(&el,
-		el_stp_update_routing_table_cbk,
-		(void*)el_rt_table_update_data, cmd_code == ROUTE_DELETE ? TASK_PRIORITY_LOW : TASK_PRIORITY_MEDIUM);
+    el_rt_table_update_data->rt_entry = (rt_table_entry_t*)calloc(1, sizeof(rt_table_entry_t));
 
-	return task;
+    memcpy((char*)el_rt_table_update_data->rt_entry,
+        rt_entry, sizeof(*rt_entry));
+
+    task_t* task = task_create_new_job(&el,
+        el_stp_update_routing_table_cbk,
+        (void*)el_rt_table_update_data,
+        cmd_code == ROUTE_DELETE ? TASK_PRIORITY_LOW : TASK_PRIORITY_MEDIUM);
+    return task;
 }
-
 
 typedef struct rt_table_print_cntxt_ {
-	int i;
-	rt_table_entry_t* rt_table_entry;
-}rt_table_print_cntxt_t;
 
-static EL_RES_T
-rt_display_rt_table_preemption_context_save_cbk(void* arg) {
+    int i;
+    rt_table_entry_t* rt_table_entry;
 
-	time_t curr_time = time(NULL);
-	unsigned int uptime_in_seconds = 0;
-	rt_table_print_cntxt_t* cntxt = (rt_table_print_cntxt_t*)arg;
-
-	rt_table_entry_t* rt_table_entry = cntxt->rt_table_entry;
-	int i = cntxt->i;
-
-	for (; rt_table_entry;
-		rt_table_entry = rt_table_entry->next) {
-
-
-		uptime_in_seconds = (unsigned int)difftime(
-			curr_time, rt_table_entry->last_updated_time);
-
-		printf("%d. %-18s %-4d %18s %-18s", i,
-			rt_table_entry->dest,
-			rt_table_entry->mask,
-			rt_table_entry->gw,
-			rt_table_entry->oif);
-
-		printf("Last updated : %s  ", hrs_min_sec_format(uptime_in_seconds));
-
-		printf("Exp time : %lu\n",
-			rt_table_entry->exp_timer ? \
-			timer_get_time_remaining_in_mill_sec(rt_table_entry->exp_timer) : 0);
-		i++;
-
-		/* Save the context */
-		if (i % 10 == 0 && rt_table_entry->next) {
-			cntxt->rt_table_entry = rt_table_entry->next;
-			cntxt->i = i++;
-			return EL_CONTINUE;
-		}
-	}
-
-	free(cntxt);
-	return EL_FINISH;
-}
-
-void
-rt_display_rt_table_preemption_context_save(rt_table_t* rt) {
-
-	rt_table_entry_t* rt_table_entry = rt->head;
-
-	if (!rt_table_entry) return;
-
-	printf("# count = %u\n", rt->count);
-
-	rt_table_print_cntxt_t* cntxt =
-		(rt_table_print_cntxt_t*)calloc(1, sizeof(rt_table_print_cntxt_t));
-
-	cntxt->i = 1;
-	cntxt->rt_table_entry = rt_table_entry;
-
-	task_create_new_job(&el,
-		rt_display_rt_table_preemption_context_save_cbk,
-		(void*)cntxt, TASK_PRIORITY_HIGH);
-}
+} rt_table_print_cntxt_t;
 
 
 static EL_RES_T
-rt_entry_serialize_and_send_task_cbk(void* arg) {
+rt_display_rt_table_preemption_conext_save_cbk(void* arg) {
 
-	rt_table_entry_t* rt_entry = (rt_table_entry_t*)arg;
+    time_t curr_time = time(NULL);
+    unsigned int uptime_in_seconds = 0;
+    rt_table_print_cntxt_t* cntxt = (rt_table_print_cntxt_t*)arg;
 
-	/* look up RT Entry in RT table */
-	rt_table_entry_t* actual_rt_entry = rt_look_up_rt_table_entry(
-		rt_entry->rt_table,
-		rt_entry->dest,
-		rt_entry->mask
-	);
+    rt_table_entry_t* rt_table_entry = cntxt->rt_table_entry;
+    int i = cntxt->i;
 
-	if (!actual_rt_entry) {
-		printf("Serialize Task : RT Entry do not exist\n");
-		free(rt_entry);
-		return EL_FINISH;
-	}
+    for (; rt_table_entry;
+        rt_table_entry = rt_table_entry->next) {
 
-	int udp_sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        uptime_in_seconds = (unsigned int)difftime(
+            curr_time, rt_table_entry->last_updated_time);
 
-	if (udp_sockfd < 0) {
-		printf("Error : Failed to create UDP socket\n");
-		free(rt_entry);
-		return EL_FINISH;
-	}
+        printf("%d. %-18s %-4d %-18s %-18s", i,
+            rt_table_entry->dest,
+            rt_table_entry->mask,
+            rt_table_entry->gw,
+            rt_table_entry->oif);
 
-	int msg_size = sizeof(uint32_t) + sizeof(rt_table_entry_t);
-	uint32_t* msg_to_send = (uint32_t*)calloc(1, msg_size);
-	*msg_to_send = ROUTE_CREATE;
-	memcpy((char*)(msg_to_send + 1), (char*)actual_rt_entry, sizeof(rt_table_entry_t));
+        printf("Last updated : %s  ", hrs_min_sec_format(uptime_in_seconds)),
+            printf("Exp time : %lu\n",
+                rt_table_entry->exp_timer ? \
+                timer_get_time_remaining_in_mill_sec(rt_table_entry->exp_timer) : 0);
+        i++;
 
-	send_udp_msg("127.0.0.1",
-		50000,
-		(char*)msg_to_send, msg_size,
-		udp_sockfd);
+        /* Save the context*/
+        if (i % 10 == 0 && rt_table_entry->next) {
 
-	close(udp_sockfd);
-	free(msg_to_send);
-	free(rt_entry);
-	return EL_FINISH;
+            cntxt->rt_table_entry = rt_table_entry->next;
+            cntxt->i = i++;
+            return EL_CONTINUE;
+        }
+    }
 
+    free(cntxt);
+    return EL_FINISH;
+}
+
+
+void
+rt_display_rt_table_preemption_conext_save(rt_table_t* rt) {
+
+    rt_table_entry_t* rt_table_entry = rt->head;
+
+    if (!rt_table_entry) return;
+
+    printf("# count = %u\n", rt->count);
+
+    rt_table_print_cntxt_t* cntxt =
+        (rt_table_print_cntxt_t*)calloc(1, sizeof(rt_table_print_cntxt_t));
+
+    cntxt->i = 1;
+    cntxt->rt_table_entry = rt_table_entry;
+
+    task_create_new_job(&el,
+        rt_display_rt_table_preemption_conext_save_cbk,
+        (void*)cntxt, TASK_PRIORITY_HIGH);
+}
+
+
+static EL_RES_T
+rt_entry_serlialize_and_send_task_cbk(void* arg) {
+
+    rt_table_entry_t* rt_entry = (rt_table_entry_t*)arg;
+
+    /* look up RT entry in RT table*/
+    rt_table_entry_t* actual_rt_entry = rt_look_up_rt_table_entry(
+        rt_entry->rt_table,
+        rt_entry->dest,
+        rt_entry->mask);
+
+    if (!actual_rt_entry) {
+
+        printf("Serialize Task : RT Entry do not exist\n");
+        free(rt_entry);
+        return EL_FINISH;
+    }
+
+    int udp_sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+
+    if (udp_sockfd < 0) {
+        printf("Error : Failed to create UDP socket\n");
+        free(rt_entry);
+        return EL_FINISH;
+    }
+
+    int msg_size = sizeof(uint32_t) + sizeof(rt_table_entry_t);
+    uint32_t* msg_to_send = (uint32_t*)calloc(1, msg_size);
+    *msg_to_send = ROUTE_CREATE;
+    memcpy((char*)(msg_to_send + 1), (char*)actual_rt_entry, sizeof(rt_table_entry_t));
+
+    send_udp_msg("127.0.0.1",
+        50000,
+        (char*)msg_to_send, msg_size,
+        udp_sockfd);
+
+    close(udp_sockfd);
+    free(msg_to_send);
+    free(rt_entry);
+    return EL_FINISH;
 }
 
 void
-el_stp_serialize_and_send_rt_entry(rt_table_t* rt, rt_table_entry_t* rt_entry_template) {
+el_stp_serialize_and_send_rt_entry(rt_table_t* rt_table, rt_table_entry_t* rt_entry_tmplate) {
 
-	/* This new rt_entry serves the purpose of context-save structure for task */
+    /* This new rt_entry serves the purpose of context-save structure for this task*/
+    rt_table_entry_t* rt_entry = (rt_table_entry_t*)calloc(1, sizeof(rt_table_entry_t));
+    strncpy(rt_entry->dest, rt_entry_tmplate->dest, 16);
+    rt_entry->mask = 32;
+    rt_entry->rt_table = rt_table;
 
-	rt_table_entry_t* rt_entry = (rt_table_entry_t*)calloc(1, sizeof(rt_table_entry_t));
-
-	strncpy(rt_entry->dest, rt_entry_template->dest, 16);
-
-	rt_entry->mask = 32;
-	rt_entry->rt_table = rt;
-
-	task_create_new_job(&el,
-		rt_entry_serialize_and_send_task_cbk,
-		(void*)rt_entry, TASK_PRIORITY_MEDIUM);
+    task_create_new_job(&el,
+        rt_entry_serlialize_and_send_task_cbk,
+        (void*)rt_entry, TASK_PRIORITY_MEDIUM);
 }
+
 
 
 typedef struct rt_table_delete_context_ {
-	rt_table_entry_t* rt_entry;
-}rt_table_delete_context_t;
+
+    rt_table_entry_t* rt_entry;
+
+} rt_table_delete_context_t;
+
 
 EL_RES_T
 rt_table_delete_cbk(void* arg) {
-	int i = 0;
 
-	rt_table_delete_context_t* cntxt = (rt_table_delete_context_t*)arg;
+    int i = 0;
 
-	rt_table_entry_t* rt_entry = cntxt->rt_entry;
-	rt_table_entry_t* rt_entry_next;
+    rt_table_delete_context_t* cntxt = (rt_table_delete_context_t*)arg;
 
-	printf("Resuming rt_table deletion Task\n");
+    rt_table_entry_t* rt_entry = cntxt->rt_entry;
+    rt_table_entry_t* rt_entry_next;
 
-	do {
-		rt_entry_next = rt_entry->next;
+    printf("Resuming rt_table deletion Task\n");
 
-		if (rt_entry->exp_timer) {
-			delete_timer(rt_entry->exp_timer);
-			rt_entry->exp_timer = NULL;
-		}
+    do {
 
-		printf("Deleting rt_entry = %s/%d\n", rt_entry->dest, rt_entry->mask);
-		free(rt_entry);
-		i++;
+        rt_entry_next = rt_entry->next;
 
-		if (i % 10 == 0 && rt_entry_next) {
-			cntxt->rt_entry = rt_entry_next;
-			printf("Preempting rt_table deletion Task\n");
-			return EL_CONTINUE;
-		}
+        if (rt_entry->exp_timer) {
+            delete_timer(rt_entry->exp_timer);
+            rt_entry->exp_timer = NULL;
+        }
 
+        printf("Deleting rt_entry = %s/%d\n", rt_entry->dest, rt_entry->mask);
+        free(rt_entry);
+        i++;
 
-		rt_entry = rt_entry_next;
-	} while (rt_entry);
+        if (i % 10 == 0 && rt_entry_next) {
+            cntxt->rt_entry = rt_entry_next;
+            printf("Preempting rt_table deletion Task\n");
+            return EL_CONTINUE;
+        }
 
-	free(cntxt);
-	printf("rt_table deletion Task Finished\n");
-	return EL_FINISH;
+        rt_entry = rt_entry_next;
+
+    } while (rt_entry);
+
+    free(cntxt);
+    printf("rt_table deletion Task Finished\n");
+    return EL_FINISH;
 }
 
 void
 el_stp_delete_rt_table(rt_table_t* rt_table) {
 
-	/* This is the case when we need to delete a container data structures.
-	Container data structures must be isolated from remaining application data structures first */
+    /* This is the case when we need to delete a container data structures.
+    Container data structures must be isloted from remaining application data structures first*/
+    if (!rt_table) return;
+    if (!rt_table->head) return;
 
-	if (!rt_table) return;
-	if (!rt_table->head) return;
+    /* Isolate RT Table*/
+    rt_table_entry_t* rt_entry = rt_table->head;
+    rt_table->head = NULL;
 
-	/* Isolate RT Table */
-	rt_table_entry_t* rt_entry = rt_table->head;
-	rt_table->head = NULL;
+    rt_table_delete_context_t* cntxt = (rt_table_delete_context_t*)calloc(1, sizeof(rt_table_delete_context_t));
+    cntxt->rt_entry = rt_entry;
 
-	rt_table_delete_context_t* cntxt = (rt_table_delete_context_t*)calloc(1, sizeof(rt_table_delete_context_t));
-	cntxt->rt_entry = rt_entry;
-
-	task_create_new_job(&el, rt_table_delete_cbk,
-		(void*)cntxt, TASK_PRIORITY_LOW);
+    task_create_new_job(&el, rt_table_delete_cbk,
+        (void*)cntxt, TASK_PRIORITY_LOW);
 }

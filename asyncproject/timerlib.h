@@ -42,18 +42,12 @@ typedef struct Timer_ {
  * return a pointer to Timer object*/
 Timer_t*
 setup_timer(
-	/* Timer Callback with user data and user size*/
-	void (*)(Timer_t*, void*),
-	/* First expiration time interval in msec */
-	unsigned long,
-	/* Subsequent expiration time interval in msec */
-	unsigned long,
-	/*  Max no of expirations, 0 for infinite*/
-	uint32_t,
-	/*  Arg to timer callback */
-	void*,
-	/*  Is timer Exp back off */
-	bool);
+	void (*timer_cb)(Timer_t*, void*), /*  Timer Callback with user data*/
+	unsigned long exp_timer,         	/*  First expiration time interval in msec */
+	unsigned long sec_exp_timer,        /*  Subsequent expiration time interval in msec */
+	uint32_t threshold,					/*  Max no of expirations, 0 for infinite*/
+	void* user_arg,                  	/*  Arg to timer callback */
+	bool exponential_backoff);
 
 static inline void
 timer_delete_user_data(Timer_t* timer) {

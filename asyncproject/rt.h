@@ -6,8 +6,8 @@ typedef struct rt_table_ rt_table_t;
 typedef struct rt_table_entry_ rt_table_entry_t;
 typedef struct Timer_ Timer_t;
 
-
 #define RT_ENTRY_EXP_TIMER 30  // 30 sec
+
 
 #define ROUTE_CREATE    1
 #define ROUTE_UPDATE    2
@@ -20,12 +20,11 @@ struct rt_table_entry_ {
     char gw[16];
     char oif[32];
     time_t last_updated_time;
+    Timer_t* exp_timer;
     struct rt_table_entry_* next;
     struct rt_table_entry_* prev;
-    rt_table_t* rt_table; /* back ptr to owning rt table*/
-
-    Timer_t* exp_timer;
     int exp_timer_msec;
+    rt_table_t* rt_table; /* back ptr to owning rt table*/
 };
 
 struct rt_table_ {
